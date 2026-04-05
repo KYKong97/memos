@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euxo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+
+apt-get update
+apt-get install -y git golang-go build-essential nginx
+
+id -u memos >/dev/null 2>&1 || useradd --system --home /opt/memos --shell /usr/sbin/nologin memos
+
+mkdir -p /opt/memos /var/opt/memos
+chown -R memos:memos /opt/memos /var/opt/memos
+
+rm -rf /tmp/memos-src
+git clone "${repo_url}" /tmp/memos-src
+cd /tmp/memos-src
+git checkout "${repo_ref}"
+
+go build -o /opt/memos/memos ./cmd/memos
+chown memos:memos /opt/memos/memos
+
+cat >/etc/systemd/system/memos.service <<EOF
+[Unit]
+Description=Memos
+After=network.target
+
+[Service]
+User=memos
+Group=memos
+WorkingDirectory=/opt/memos
+ExecStart=/opt/memos/memos --port 8081 --data /var/opt/memos --driver sqlite --instance-url ${instance_url}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat >/etc/nginx/sites-available/memos <<'EOF'
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+
+    client_max_body_size 30m;
+
+    location / {
+        proxy_pass http://127.0.0.1:8081;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+EOF
+
+rm -f /etc/nginx/sites-enabled/default
+ln -sf /etc/nginx/sites-available/memos /etc/nginx/sites-enabled/memos
+
+systemctl daemon-reload
+systemctl enable --now memos
+nginx -t
+systemctl enable --now nginx
+systemctl reload nginx

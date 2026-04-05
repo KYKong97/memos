@@ -1,0 +1,9 @@
+project_id      = "your-gcp-project-id"
+region          = "us-central1"
+zone            = "us-central1-a"
+name            = "memos"
+machine_type    = "e2-micro"
+disk_size_gb    = 20
+repo_ref        = "main"
+domain_name     = ""
+allow_ssh_cidrs = ["0.0.0.0/0"]
